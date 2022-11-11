@@ -17,7 +17,8 @@ import (
 var (
 	pgUser          = "secret"
 	pgPassword      = "secret"
-	pgHost          = "localhost:5432"
+	pgHost          = "localhost"
+	pgPort          = "5432"
 	pgDB            = "jwt"
 	pgUserTable     = "users"
 	pgLoginField    = "login"
@@ -50,6 +51,10 @@ func init() {
 
 	if os.Getenv("PG_HOST") != "" {
 		pgHost = os.Getenv("PG_HOST")
+	}
+
+	if os.Getenv("PG_PORT") != "" {
+		pgPort = os.Getenv("PG_PORT")
 	}
 
 	if os.Getenv("PG_DB") != "" {
@@ -100,7 +105,7 @@ func main() {
 		panic(err)
 	}
 
-	userRepository, err = repositories.NewUserRepositoryPG(pgUser, pgPassword, pgHost, pgDB, pgUserTable, pgLoginField)
+	userRepository, err = repositories.NewUserRepositoryPG(pgHost, pgPort, pgUser, pgPassword, pgDB, pgUserTable, pgLoginField)
 
 	if err != nil {
 		panic(err)

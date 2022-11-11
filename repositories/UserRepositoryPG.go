@@ -14,9 +14,9 @@ type UserRepositoryPG struct {
 	queryRow string
 }
 
-func NewUserRepositoryPG(host, user, password, dbname, tableName, loginField string) (*UserRepositoryPG, error) {
+func NewUserRepositoryPG(host, port, user, password, dbname, tableName, loginField string) (*UserRepositoryPG, error) {
 
-	connStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable", host, user, password, dbname)
+	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", connStr)
 
 	if err != nil {
