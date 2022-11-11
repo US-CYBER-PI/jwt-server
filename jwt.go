@@ -19,6 +19,8 @@ var (
 	pgPassword      = "secret"
 	pgHost          = "localhost:5432"
 	pgDB            = "jwt"
+	pgUserTable     = "users"
+	pgLoginField    = "login"
 	hmacSecret      = []byte("c4bd7d88edb4fa1817abb11707958924384f7933e5facfd707dc1d1429af9936")
 	port            = 9096
 	namespace       = "test"
@@ -52,6 +54,14 @@ func init() {
 
 	if os.Getenv("PG_DB") != "" {
 		pgDB = os.Getenv("PG_DB")
+	}
+
+	if os.Getenv("PG_USER_TABLE") != "" {
+		pgUserTable = os.Getenv("PG_USER_TABLE")
+	}
+
+	if os.Getenv("PG_LOGIN_FIELD") != "" {
+		pgLoginField = os.Getenv("PG_LOGIN_FIELD")
 	}
 
 	if os.Getenv("HMAC_SECRET") != "" {
@@ -90,7 +100,7 @@ func main() {
 		panic(err)
 	}
 
-	userRepository, err = repositories.NewUserRepositoryPG(pgUser, pgPassword, pgHost, pgDB, "users", "login")
+	userRepository, err = repositories.NewUserRepositoryPG(pgUser, pgPassword, pgHost, pgDB, pgUserTable, pgLoginField)
 
 	if err != nil {
 		panic(err)
