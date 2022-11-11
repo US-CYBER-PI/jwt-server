@@ -1,29 +1,33 @@
 package main
 
 import (
-	"crypto/sha512"
-	"encoding/hex"
+	_interface "JwtServer/interface"
+	"JwtServer/repositories"
+	"JwtServer/utils"
 	"encoding/json"
 	"fmt"
-	as "github.com/aerospike/aerospike-client-go"
-	"github.com/golang-jwt/jwt"
 	"github.com/joho/godotenv"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var (
-	hmacSecret    = []byte("c4bd7d88edb4fa1817abb11707958924384f7933e5facfd707dc1d1429af9936")
-	port          = 9096
-	namespace     = "test"
-	setName       = "jwt"
-	aerospikeHost = "127.0.0.1"
-	aerospikePort = 3000
-	client        = &as.Client{}
+	pgUser          = "secret"
+	pgPassword      = "secret"
+	pgHost          = "localhost:5432"
+	pgDB            = "jwt"
+	hmacSecret      = []byte("c4bd7d88edb4fa1817abb11707958924384f7933e5facfd707dc1d1429af9936")
+	port            = 9096
+	namespace       = "test"
+	setName         = "jwt"
+	aerospikeHost   = "127.0.0.1"
+	aerospikePort   = 3000
+	tokenRepository _interface.TokenRepository
+	userRepository  _interface.UserRepository
+	jwtManager      utils.JwtManager
 )
 
 func init() {
@@ -32,6 +36,22 @@ func init() {
 
 	if err != nil {
 		log.Println("Error loading .env file")
+	}
+
+	if os.Getenv("PG_USER") != "" {
+		pgUser = os.Getenv("PG_USER")
+	}
+
+	if os.Getenv("PG_PASSWORD") != "" {
+		pgPassword = os.Getenv("PG_PASSWORD")
+	}
+
+	if os.Getenv("PG_HOST") != "" {
+		pgHost = os.Getenv("PG_HOST")
+	}
+
+	if os.Getenv("PG_DB") != "" {
+		pgDB = os.Getenv("PG_DB")
 	}
 
 	if os.Getenv("HMAC_SECRET") != "" {
@@ -64,11 +84,19 @@ func main() {
 
 	var err error
 
-	client, err = as.NewClient(aerospikeHost, aerospikePort)
+	tokenRepository, err = repositories.NewTokenRepositoryAerospike(aerospikeHost, aerospikePort, namespace, setName)
 
 	if err != nil {
 		panic(err)
 	}
+
+	userRepository, err = repositories.NewUserRepositoryPG(pgUser, pgPassword, pgHost, pgDB, "users", "login")
+
+	if err != nil {
+		panic(err)
+	}
+
+	jwtManager = utils.NewJwtManager(hmacSecret, tokenRepository)
 
 	http.HandleFunc("/auth/token", tokenHandler)
 	http.HandleFunc("/auth/check", tokenCheckHandler)
@@ -92,14 +120,13 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":   login,
-		"role": "user",
-		"exp":  time.Now().AddDate(0, 0, 10).Unix(),
-	})
+	authentication, err := userRepository.Authentication(login, password)
+	if err != nil {
+		http.Error(w, "", http.StatusForbidden)
+		return
+	}
 
-	// Sign and get the complete encoded token as a string using the secret
-	tokenString, _ := token.SignedString(hmacSecret)
+	tokenString := jwtManager.CreateToken(strconv.Itoa(int(authentication.Id)))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -110,14 +137,19 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
 
-	token, code, _ := getToken(r)
+	token, code := getToken(r)
 
 	if code == 200 {
 
-		claims, _ := token.Claims.(jwt.MapClaims)
+		userId := jwtManager.GetTokenId(token)
+
+		if userId == "" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("User-Id", fmt.Sprint(claims["id"]))
+		w.Header().Set("User-Id", userId)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"mes": "successfully",
 		})
@@ -130,18 +162,12 @@ func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
 
 func tokenDelHandler(w http.ResponseWriter, r *http.Request) {
 
-	token, code, tokenSha := getToken(r)
+	token, code := getToken(r)
 
 	if code == 200 {
-
-		claims, _ := token.Claims.(jwt.MapClaims)
-		addHash(
-			tokenSha,
-			uint32(time.Unix(int64(claims["exp"].(float64)), 0).Sub(time.Now()).Seconds()),
-		)
+		jwtManager.DeleteToken(token)
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("User-Id", fmt.Sprint(claims["id"]))
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"mes": "successfully",
 		})
@@ -152,47 +178,22 @@ func tokenDelHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "", code)
 }
 
-func getToken(r *http.Request) (*jwt.Token, int, string) {
+func getToken(r *http.Request) (string, int) {
 
 	if r.Method != http.MethodPost {
-		return nil, http.StatusMethodNotAllowed, ""
+		return "", http.StatusMethodNotAllowed
 	}
 
 	token := r.Header.Get("Authorization")
 
 	if token == "" {
-		return nil, http.StatusUnauthorized, ""
+		return "", http.StatusUnauthorized
 	}
 	extractedToken := strings.Split(token, "Bearer ")
 
 	if len(extractedToken) < 2 {
-		return nil, http.StatusUnauthorized, ""
+		return "", http.StatusUnauthorized
 	}
 
-	tokenResult, err := jwt.Parse(extractedToken[1], func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		return hmacSecret, nil
-	})
-
-	if err != nil {
-		return nil, http.StatusUnauthorized, ""
-	}
-
-	tokenSha := Sha512(extractedToken[1])
-
-	if _, ok := tokenResult.Claims.(jwt.MapClaims); ok && tokenResult.Valid && !isSet(tokenSha) {
-		return tokenResult, http.StatusOK, tokenSha
-	}
-
-	return nil, http.StatusUnauthorized, ""
-}
-
-func Sha512(text string) string {
-	algorithm := sha512.New()
-	algorithm.Write([]byte(text))
-	return hex.EncodeToString(algorithm.Sum(nil))
+	return extractedToken[1], http.StatusOK
 }
