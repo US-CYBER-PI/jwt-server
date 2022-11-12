@@ -93,13 +93,11 @@ func (j *JwtManager) GetRefreshToken(token string) (*jwt.Token, string) {
 	return nil, ""
 }
 
-func (j *JwtManager) CreateToken(refreshToken, access string) string {
-
-	refreshTokenR, _ := j.GetRefreshToken(refreshToken)
+func (j *JwtManager) CreateToken(userId, access string) string {
 
 	//TODO correct the name of the fields according to the standard
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":     refreshTokenR.Claims.(jwt.MapClaims)["id"],
+		"id":     userId,
 		"access": access,
 		"exp":    time.Now().Add(5 * time.Minute).Unix(),
 	})
