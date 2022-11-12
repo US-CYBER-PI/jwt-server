@@ -50,3 +50,10 @@ func (r *UserRepositoryPG) Authentication(login, password string) (*models.User,
 
 	return &user, nil
 }
+
+func (r *UserRepositoryPG) GetRoles(userId int) ([]*models.Role, error) {
+	return []*models.Role{
+		{Id: 1, Name: "user"},
+		{Id: 2, Name: "admin"},
+	}, nil
+}

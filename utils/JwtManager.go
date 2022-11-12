@@ -19,11 +19,11 @@ func NewJwtManager(hmacSecret []byte, tokenRepository _interface.TokenRepository
 	}
 }
 
-func (j *JwtManager) CreateToken(id string) string {
+func (j *JwtManager) CreateRefreshToken(id string) string {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":   id,
-		"role": "user",
+		"type": "refresh",
 		"exp":  time.Now().AddDate(0, 0, 10).Unix(),
 	})
 
@@ -33,15 +33,15 @@ func (j *JwtManager) CreateToken(id string) string {
 	return tokenString
 }
 
-func (j *JwtManager) CheckToken(token string) bool {
+func (j *JwtManager) CheckRefreshToken(token string) bool {
 
-	tokenR, _ := j.GetToken(token)
+	tokenR, _ := j.GetRefreshToken(token)
 
 	return tokenR != nil
 }
 
-func (j *JwtManager) DeleteToken(token string) bool {
-	tokenR, tokenSha := j.GetToken(token)
+func (j *JwtManager) DeleteRefreshToken(token string) bool {
+	tokenR, tokenSha := j.GetRefreshToken(token)
 
 	if tokenR == nil {
 		return false
@@ -56,9 +56,9 @@ func (j *JwtManager) DeleteToken(token string) bool {
 	return true
 }
 
-func (j *JwtManager) GetTokenId(token string) string {
+func (j *JwtManager) GetRefreshTokenId(token string) string {
 
-	tokenR, _ := j.GetToken(token)
+	tokenR, _ := j.GetRefreshToken(token)
 
 	if tokenR == nil {
 		return ""
@@ -69,7 +69,7 @@ func (j *JwtManager) GetTokenId(token string) string {
 	return fmt.Sprint(claims["id"])
 }
 
-func (j *JwtManager) GetToken(token string) (*jwt.Token, string) {
+func (j *JwtManager) GetRefreshToken(token string) (*jwt.Token, string) {
 
 	tokenResult, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
@@ -91,4 +91,69 @@ func (j *JwtManager) GetToken(token string) (*jwt.Token, string) {
 	}
 
 	return nil, ""
+}
+
+func (j *JwtManager) CreateToken(refreshToken, access string) string {
+
+	refreshTokenR, _ := j.GetRefreshToken(refreshToken)
+
+	//TODO correct the name of the fields according to the standard
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":     refreshTokenR.Claims.(jwt.MapClaims)["id"],
+		"access": access,
+		"exp":    time.Now().Add(5 * time.Minute).Unix(),
+	})
+
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, _ := token.SignedString(j.hmacSecret)
+
+	return tokenString
+}
+
+func (j *JwtManager) GetTokenId(token string) string {
+
+	tokenR := j.GetToken(token)
+
+	if tokenR == nil {
+		return ""
+	}
+
+	claims, _ := tokenR.Claims.(jwt.MapClaims)
+
+	return fmt.Sprint(claims["id"])
+}
+
+func (j *JwtManager) GetTokenData(token string) (string, string) {
+
+	tokenR := j.GetToken(token)
+
+	if tokenR == nil {
+		return "", ""
+	}
+
+	claims, _ := tokenR.Claims.(jwt.MapClaims)
+
+	return fmt.Sprint(claims["id"]), fmt.Sprint(claims["access"])
+}
+
+func (j *JwtManager) GetToken(token string) *jwt.Token {
+
+	tokenResult, err := jwt.Parse(token, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
+		return j.hmacSecret, nil
+	})
+
+	if err != nil {
+		return nil
+	}
+
+	if _, ok := tokenResult.Claims.(jwt.MapClaims); ok && tokenResult.Valid {
+		return tokenResult
+	}
+
+	return nil
 }

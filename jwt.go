@@ -28,6 +28,7 @@ var (
 	setName         = "jwt"
 	aerospikeHost   = "127.0.0.1"
 	aerospikePort   = 3000
+	allowedAccesses = map[string][]string{"view": {"user", "admin"}, "create": {"admin"}}
 	tokenRepository _interface.TokenRepository
 	userRepository  _interface.UserRepository
 	jwtManager      utils.JwtManager
@@ -93,6 +94,15 @@ func init() {
 		aerospikePort, _ = strconv.Atoi(os.Getenv("AEROSPIKE_PORT"))
 	}
 
+	//format: view:user|admin,create:admin
+	if os.Getenv("ALLOWED_ACCESSES") != "" {
+		for _, val := range strings.Split(os.Getenv("ALLOWED_ACCESSES"), ",") {
+			accesses := strings.Split(val, ":")[0]
+			roles := strings.Split(val, ":")[1]
+			allowedAccesses[accesses] = strings.Split(roles, "|")
+		}
+	}
+
 }
 
 func main() {
@@ -113,14 +123,17 @@ func main() {
 
 	jwtManager = utils.NewJwtManager(hmacSecret, tokenRepository)
 
+	http.HandleFunc("/auth/refresh_token", refreshTokenHandler)
+	http.HandleFunc("/auth/update/refresh_token", updateRefreshTokenHandler)
+	http.HandleFunc("/auth/del", refreshTokenDelHandler)
+
 	http.HandleFunc("/auth/token", tokenHandler)
 	http.HandleFunc("/auth/check", tokenCheckHandler)
-	http.HandleFunc("/auth/del", tokenDelHandler)
 
 	_ = http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }
 
-func tokenHandler(w http.ResponseWriter, r *http.Request) {
+func refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "", http.StatusMethodNotAllowed)
@@ -141,7 +154,7 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenString := jwtManager.CreateToken(strconv.Itoa(int(authentication.Id)))
+	tokenString := jwtManager.CreateRefreshToken(strconv.Itoa(int(authentication.Id)))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -150,16 +163,109 @@ func tokenHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
+func updateRefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 
 	token, code := getToken(r)
 
 	if code == 200 {
 
-		userId := jwtManager.GetTokenId(token)
-
+		//TODO add a ban on updating if the token can live more than half of its time
+		userId := jwtManager.GetRefreshTokenId(token)
 		if userId == "" {
 			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+
+		jwtManager.DeleteRefreshToken(token)
+		tokenString := jwtManager.CreateRefreshToken(userId)
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"token": tokenString,
+		})
+		return
+	}
+
+	http.Error(w, "", code)
+}
+
+func refreshTokenDelHandler(w http.ResponseWriter, r *http.Request) {
+
+	token, code := getToken(r)
+
+	if code == 200 {
+		jwtManager.DeleteRefreshToken(token)
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"mes": "successfully",
+		})
+
+		return
+	}
+
+	http.Error(w, "", code)
+}
+
+func tokenHandler(w http.ResponseWriter, r *http.Request) {
+
+	token, codeToken := getToken(r)
+	access, codeAccess := getAccess(r)
+
+	if codeToken == 200 && codeAccess == 200 {
+
+		if _, ok := allowedAccesses[access]; !ok {
+			http.Error(w, "", http.StatusForbidden)
+			return
+		}
+
+		userId := jwtManager.GetRefreshTokenId(token)
+		if userId == "" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+
+		userId32, _ := strconv.Atoi(userId)
+		roles, _ := userRepository.GetRoles(userId32)
+
+		for _, role := range roles {
+			if utils.Contains(allowedAccesses[access], role.Name) {
+				tokenString := jwtManager.CreateToken(userId, access)
+
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"token": tokenString,
+				})
+				return
+			}
+		}
+
+		http.Error(w, "", http.StatusUnauthorized)
+		return
+	}
+
+	if codeToken == 200 {
+		http.Error(w, "", codeAccess)
+	} else {
+		http.Error(w, "", codeToken)
+	}
+}
+
+func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
+
+	token, codeToken := getToken(r)
+	access, codeAccess := getAccess(r)
+
+	if codeToken == 200 && codeAccess == 200 {
+
+		userId, tokenAccess := jwtManager.GetTokenData(token)
+		if userId == "" {
+			http.Error(w, "", http.StatusUnauthorized)
+			return
+		}
+
+		if access != tokenAccess {
+			http.Error(w, "", http.StatusForbidden)
 			return
 		}
 
@@ -171,26 +277,12 @@ func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	http.Error(w, "", code)
-
-}
-
-func tokenDelHandler(w http.ResponseWriter, r *http.Request) {
-
-	token, code := getToken(r)
-
-	if code == 200 {
-		jwtManager.DeleteToken(token)
-
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"mes": "successfully",
-		})
-
-		return
+	if codeToken == 200 {
+		http.Error(w, "", codeAccess)
+	} else {
+		http.Error(w, "", codeToken)
 	}
 
-	http.Error(w, "", code)
 }
 
 func getToken(r *http.Request) (string, int) {
@@ -211,4 +303,19 @@ func getToken(r *http.Request) (string, int) {
 	}
 
 	return extractedToken[1], http.StatusOK
+}
+
+func getAccess(r *http.Request) (string, int) {
+
+	if r.Method != http.MethodPost {
+		return "", http.StatusMethodNotAllowed
+	}
+
+	token := r.Header.Get("Access")
+
+	if token == "" {
+		return "", http.StatusUnauthorized
+	}
+
+	return token, http.StatusOK
 }
