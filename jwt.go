@@ -150,15 +150,15 @@ func refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	login := r.FormValue("login")
+	phone := r.FormValue("phone")
 	password := r.FormValue("password")
 
-	if login == "" || password == "" {
+	if phone == "" || password == "" {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
 
-	authentication, err := userRepository.Authentication(login, password)
+	authentication, err := userRepository.Authentication(phone, password)
 	if err != nil {
 		http.Error(w, "", http.StatusForbidden)
 		return
