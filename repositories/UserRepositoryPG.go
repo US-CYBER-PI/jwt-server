@@ -30,7 +30,7 @@ func NewUserRepositoryPG(host, port, user, password, dbname, tableUserName, tabl
 
 	return &UserRepositoryPG{
 		db:           db,
-		queryUserRow: fmt.Sprintf("SELECT id,%s,password FROM %s WHERE login=$1", loginField, tableUserName),
+		queryUserRow: fmt.Sprintf("SELECT id, %s, password FROM %s WHERE %s=$1", loginField, tableUserName, loginField),
 		queryRoleRow: fmt.Sprintf("SELECT %s.id, %s.name FROM %s JOIN %s ON %s.%s=%s.id WHERE %s.id=$1",
 			tableRoleName,
 			tableRoleName,
