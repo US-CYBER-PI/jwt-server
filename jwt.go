@@ -22,6 +22,8 @@ var (
 	pgDB            = "jwt"
 	pgUserTable     = "users"
 	pgLoginField    = "login"
+	pgRoleTable     = "roles"
+	pgRoleIdField   = "role_id"
 	hmacSecret      = []byte("c4bd7d88edb4fa1817abb11707958924384f7933e5facfd707dc1d1429af9936")
 	port            = 9096
 	namespace       = "test"
@@ -70,6 +72,14 @@ func init() {
 		pgLoginField = os.Getenv("PG_LOGIN_FIELD")
 	}
 
+	if os.Getenv("PG_ROLE_TABLE") != "" {
+		pgRoleTable = os.Getenv("PG_ROLE_TABLE")
+	}
+
+	if os.Getenv("PG_ROLE_FIELD") != "" {
+		pgRoleIdField = os.Getenv("PG_ROLE_FIELD")
+	}
+
 	if os.Getenv("HMAC_SECRET") != "" {
 		hmacSecret = []byte(os.Getenv("HMAC_SECRET"))
 	}
@@ -96,10 +106,10 @@ func init() {
 
 	//format: view:user|admin,create:admin
 	if os.Getenv("ALLOWED_ACCESSES") != "" {
-		for _, val := range strings.Split(os.Getenv("ALLOWED_ACCESSES"), ",") {
+		for _, val := range strings.Split(os.Getenv("ALLOWED_ACCESSES"), "|") {
 			accesses := strings.Split(val, ":")[0]
 			roles := strings.Split(val, ":")[1]
-			allowedAccesses[accesses] = strings.Split(roles, "|")
+			allowedAccesses[accesses] = strings.Split(roles, ",")
 		}
 	}
 
@@ -115,7 +125,7 @@ func main() {
 		panic(err)
 	}
 
-	userRepository, err = repositories.NewUserRepositoryPG(pgHost, pgPort, pgUser, pgPassword, pgDB, pgUserTable, pgLoginField)
+	userRepository, err = repositories.NewUserRepositoryPG(pgHost, pgPort, pgUser, pgPassword, pgDB, pgUserTable, pgRoleTable, pgLoginField, pgRoleIdField)
 
 	if err != nil {
 		panic(err)

@@ -10,11 +10,12 @@ import (
 )
 
 type UserRepositoryPG struct {
-	db       *sql.DB
-	queryRow string
+	db           *sql.DB
+	queryUserRow string
+	queryRoleRow string
 }
 
-func NewUserRepositoryPG(host, port, user, password, dbname, tableName, loginField string) (*UserRepositoryPG, error) {
+func NewUserRepositoryPG(host, port, user, password, dbname, tableUserName, tableRoleName, loginField, roleIdField string) (*UserRepositoryPG, error) {
 
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 	db, err := sql.Open("postgres", connStr)
@@ -28,15 +29,24 @@ func NewUserRepositoryPG(host, port, user, password, dbname, tableName, loginFie
 	}
 
 	return &UserRepositoryPG{
-		db:       db,
-		queryRow: fmt.Sprintf("SELECT id,%s,password FROM %s WHERE login=$1", loginField, tableName),
+		db:           db,
+		queryUserRow: fmt.Sprintf("SELECT id,%s,password FROM %s WHERE login=$1", loginField, tableUserName),
+		queryRoleRow: fmt.Sprintf("SELECT %s.id, %s.name FROM %s JOIN %s ON %s.%s=%s.id WHERE %s.id=$1",
+			tableRoleName,
+			tableRoleName,
+			tableRoleName,
+			tableUserName,
+			tableUserName,
+			roleIdField,
+			tableRoleName,
+			tableUserName),
 	}, nil
 }
 
 func (r *UserRepositoryPG) Authentication(login, password string) (*models.User, error) {
 	var user models.User
 
-	err := r.db.QueryRow(r.queryRow, login).Scan(&user.Id, &user.Login, &user.Password)
+	err := r.db.QueryRow(r.queryUserRow, login).Scan(&user.Id, &user.Login, &user.Password)
 
 	if err != nil {
 		return nil, errors.New("user not found")
@@ -52,8 +62,10 @@ func (r *UserRepositoryPG) Authentication(login, password string) (*models.User,
 }
 
 func (r *UserRepositoryPG) GetRoles(userId int) ([]*models.Role, error) {
+	var role models.Role
+
+	_ = r.db.QueryRow(r.queryRoleRow, userId).Scan(&role.Id, &role.Name)
 	return []*models.Role{
-		{Id: 1, Name: "user"},
-		{Id: 2, Name: "admin"},
+		&role,
 	}, nil
 }
