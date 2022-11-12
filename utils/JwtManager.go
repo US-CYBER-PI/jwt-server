@@ -19,18 +19,20 @@ func NewJwtManager(hmacSecret []byte, tokenRepository _interface.TokenRepository
 	}
 }
 
-func (j *JwtManager) CreateRefreshToken(id string) string {
+func (j *JwtManager) CreateRefreshToken(id string) (string, int64) {
+
+	exp := time.Now().AddDate(0, 0, 10).Unix()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"id":   id,
 		"type": "refresh",
-		"exp":  time.Now().AddDate(0, 0, 10).Unix(),
+		"exp":  exp,
 	})
 
 	// Sign and get the complete encoded token as a string using the secret
 	tokenString, _ := token.SignedString(j.hmacSecret)
 
-	return tokenString
+	return tokenString, exp
 }
 
 func (j *JwtManager) CheckRefreshToken(token string) bool {

@@ -164,11 +164,15 @@ func refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenString := jwtManager.CreateRefreshToken(strconv.Itoa(int(authentication.Id)))
+	tokenString, exp := jwtManager.CreateRefreshToken(strconv.Itoa(int(authentication.Id)))
+
+	roles, _ := userRepository.GetRoles(int(authentication.Id))
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"token": tokenString,
+		"token":       tokenString,
+		"expiredDate": exp,
+		"role":        roles[0].Name,
 	})
 
 }
@@ -187,11 +191,17 @@ func updateRefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		jwtManager.DeleteRefreshToken(token)
-		tokenString := jwtManager.CreateRefreshToken(userId)
+		tokenString, exp := jwtManager.CreateRefreshToken(userId)
+
+		userIdInt, _ := strconv.Atoi(userId)
+
+		roles, _ := userRepository.GetRoles(userIdInt)
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"token": tokenString,
+			"token":       tokenString,
+			"expiredDate": exp,
+			"role":        roles[0].Name,
 		})
 		return
 	}
