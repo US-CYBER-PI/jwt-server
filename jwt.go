@@ -153,7 +153,7 @@ func refreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 	login := r.FormValue("login")
 	password := r.FormValue("password")
 
-	if login == "" || password == "" || login != password {
+	if login == "" || password == "" {
 		http.Error(w, "", http.StatusBadRequest)
 		return
 	}
