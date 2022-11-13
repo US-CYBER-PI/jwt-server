@@ -295,6 +295,8 @@ func tokenCheckHandler(w http.ResponseWriter, r *http.Request) {
 			"mes": "successfully",
 		})
 
+		return
+
 	}
 
 	if codeToken == 200 {
