@@ -88,7 +88,7 @@ func (j *JwtManager) GetRefreshToken(token string) (*jwt.Token, string) {
 
 	tokenSha := Sha512(token)
 
-	if _, ok := tokenResult.Claims.(jwt.MapClaims); ok && tokenResult.Valid && !j.tokenRepository.IsSet(tokenSha) {
+	if claims, ok := tokenResult.Claims.(jwt.MapClaims); ok && tokenResult.Valid && claims["type"] == "refresh" && !j.tokenRepository.IsSet(tokenSha) {
 		return tokenResult, tokenSha
 	}
 
